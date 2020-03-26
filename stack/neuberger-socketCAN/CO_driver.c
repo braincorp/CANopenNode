@@ -446,6 +446,7 @@ void CO_CANmodule_disable(CO_CANmodule_t *CANmodule)
     }
     if (CANmodule->CANinterfaces != NULL) {
         free(CANmodule->CANinterfaces);
+        CANmodule->CANinterfaces = NULL;
     }
     CANmodule->CANinterfaceCount = 0;
 
@@ -457,6 +458,7 @@ void CO_CANmodule_disable(CO_CANmodule_t *CANmodule)
         wait.tv_nsec = 50 /* ms */ * 1000000;
         nanosleep(&wait, NULL);
         CO_NotifyPipeFree(CANmodule->pipe);
+        CANmodule->pipe = NULL;
     }
 
     if (CANmodule->fdEpoll >= 0) {
