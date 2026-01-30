@@ -25,6 +25,18 @@
 
 #include "CANopen.h"
 
+/* Verbose init error debugging - logs detailed info when init fails */
+#ifndef CO_INIT_DEBUG
+#define CO_INIT_DEBUG 1
+#endif
+
+#if CO_INIT_DEBUG
+#include <debug/debug.h>
+#define CO_INIT_ERROR(fmt, ...) DEBUG_PRINTF(ERROR, "[CO_INIT] " fmt, ##__VA_ARGS__)
+#else
+#define CO_INIT_ERROR(fmt, ...)
+#endif
+
 /* Get values from CO_config_t or from single default OD.h ********************/
 #ifdef CO_MULTIPLE_OD
 #define CO_GET_CO(obj) co->obj
@@ -913,6 +925,8 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
         || (CO_GET_CNT(NMT) == 0 && NMT == NULL)
         || (CO_GET_CNT(EM) == 0 && em == NULL)
     ) {
+        CO_INIT_ERROR("CO_CANopenInit: ILLEGAL_ARGUMENT - co=%p, NMT_CNT=%d, EM_CNT=%d\n",
+                      (void*)co, CO_GET_CNT(NMT), CO_GET_CNT(EM));
         return CO_ERROR_ILLEGAL_ARGUMENT;
     }
 
@@ -933,6 +947,7 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
     else
 #endif
     if (nodeId < 1 || nodeId > 127) {
+        CO_INIT_ERROR("CO_CANopenInit: Invalid nodeId=%d (must be 1-127)\n", nodeId);
         return CO_ERROR_ILLEGAL_ARGUMENT;
     }
 
@@ -976,7 +991,10 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
  #endif
                          nodeId,
                          errInfo);
-        if (err) return err;
+        if (err) {
+            CO_INIT_ERROR("CO_EM_init FAILED: err=%d, errInfo=0x%lX\n", err, errInfo ? *errInfo : 0);
+            return err;
+        }
     }
 
     /* NMT_Heartbeat */
@@ -999,7 +1017,10 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
                           CO_GET_CO(TX_IDX_HB_PROD),
                           CO_CAN_ID_HEARTBEAT + nodeId,
                           errInfo);
-        if (err) return err;
+        if (err) {
+            CO_INIT_ERROR("CO_NMT_init FAILED: err=%d, errInfo=0x%lX\n", err, errInfo ? *errInfo : 0);
+            return err;
+        }
     }
 
 #if (CO_CONFIG_HB_CONS) & CO_CONFIG_HB_CONS_ENABLE
@@ -1012,7 +1033,11 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
                                  co->CANmodule,
                                  CO_GET_CO(RX_IDX_HB_CONS),
                                  errInfo);
-        if (err) return err;
+        if (err) {
+            CO_INIT_ERROR("CO_HBconsumer_init FAILED: err=%d, errInfo=0x%lX, ARR_1016_cnt=%d\n",
+                          err, errInfo ? *errInfo : 0, CO_GET_CNT(ARR_1016));
+            return err;
+        }
     }
 #endif
 
@@ -1030,7 +1055,11 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
                                     co->CANmodule,
                                     CO_GET_CO(TX_IDX_SDO_SRV) + i,
                                     errInfo);
-            if (err) return err;
+            if (err) {
+                CO_INIT_ERROR("CO_SDOserver_init[%d/%d] FAILED: err=%d, errInfo=0x%lX\n",
+                              i, CO_GET_CNT(SDO_SRV), err, errInfo ? *errInfo : 0);
+                return err;
+            }
         }
     }
 
@@ -1047,7 +1076,11 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
                                     co->CANmodule,
                                     CO_GET_CO(TX_IDX_SDO_CLI) + i,
                                     errInfo);
-            if (err) return err;
+            if (err) {
+                CO_INIT_ERROR("CO_SDOclient_init[%d/%d] FAILED: err=%d, errInfo=0x%lX\n",
+                              i, CO_GET_CNT(SDO_CLI), err, errInfo ? *errInfo : 0);
+                return err;
+            }
         }
     }
 #endif
@@ -1063,7 +1096,10 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
                            CO_GET_CO(TX_IDX_TIME),
 #endif
                            errInfo);
-        if (err) return err;
+        if (err) {
+            CO_INIT_ERROR("CO_TIME_init FAILED: err=%d, errInfo=0x%lX\n", err, errInfo ? *errInfo : 0);
+            return err;
+        }
     }
 #endif
 
@@ -1082,7 +1118,10 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
                            CO_GET_CO(TX_IDX_SYNC),
 #endif
                            errInfo);
-        if (err) return err;
+        if (err) {
+            CO_INIT_ERROR("CO_SYNC_init FAILED: err=%d, errInfo=0x%lX\n", err, errInfo ? *errInfo : 0);
+            return err;
+        }
     }
 #endif
 
@@ -1096,7 +1135,10 @@ CO_ReturnError_t CO_CANopenInit(CO_t *co,
                           co->CANmodule,
                           CO_GET_CO(TX_IDX_GFC),
                           CO_CAN_ID_GFC);
-        if (err) return err;
+        if (err) {
+            CO_INIT_ERROR("CO_GFC_init FAILED: err=%d\n", err);
+            return err;
+        }
     }
 #endif
 
@@ -1210,9 +1252,12 @@ CO_ReturnError_t CO_CANopenInitPDO(CO_t *co,
                                    uint32_t *errInfo)
 {
     if (co == NULL) {
+        CO_INIT_ERROR("CO_CANopenInitPDO: co is NULL\n");
         return CO_ERROR_ILLEGAL_ARGUMENT;
     }
     if (nodeId < 1 || nodeId > 127 || co->nodeIdUnconfigured) {
+        CO_INIT_ERROR("CO_CANopenInitPDO: invalid nodeId=%d (must be 1-127), unconfigured=%d\n",
+                      nodeId, co->nodeIdUnconfigured);
         return (co->nodeIdUnconfigured)
                ? CO_ERROR_NODE_ID_UNCONFIGURED_LSS : CO_ERROR_ILLEGAL_ARGUMENT;
     }
@@ -1246,7 +1291,11 @@ CO_ReturnError_t CO_CANopenInitPDO(CO_t *co,
                                co->CANmodule,
                                CO_GET_CO(RX_IDX_RPDO) + i,
                                errInfo);
-            if (err) return err;
+            if (err) {
+                CO_INIT_ERROR("CO_RPDO_init[%d/%d] FAILED: err=%d, errInfo=0x%lX, preCOBID=0x%X\n",
+                              i, CO_GET_CNT(RPDO), err, errInfo ? *errInfo : 0, preDefinedCanId);
+                return err;
+            }
         }
     }
 #endif
@@ -1280,7 +1329,11 @@ CO_ReturnError_t CO_CANopenInitPDO(CO_t *co,
                                co->CANmodule,
                                CO_GET_CO(TX_IDX_TPDO) + i,
                                errInfo);
-            if (err) return err;
+            if (err) {
+                CO_INIT_ERROR("CO_TPDO_init[%d/%d] FAILED: err=%d, errInfo=0x%lX, preCOBID=0x%X\n",
+                              i, CO_GET_CNT(TPDO), err, errInfo ? *errInfo : 0, preDefinedCanId);
+                return err;
+            }
         }
     }
 #endif

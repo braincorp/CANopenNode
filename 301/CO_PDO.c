@@ -27,6 +27,18 @@
 
 #include "301/CO_PDO.h"
 
+/* Verbose init error debugging - logs detailed info when init fails */
+#ifndef CO_INIT_DEBUG
+#define CO_INIT_DEBUG 1
+#endif
+
+#if CO_INIT_DEBUG
+#include <debug/debug.h>
+#define CO_INIT_ERROR(fmt, ...) DEBUG_PRINTF(ERROR, "[CO_INIT] " fmt, ##__VA_ARGS__)
+#else
+#define CO_INIT_ERROR(fmt, ...)
+#endif
+
 #if (CO_CONFIG_PDO) & (CO_CONFIG_RPDO_ENABLE | CO_CONFIG_TPDO_ENABLE)
 
 #if (CO_CONFIG_PDO) & CO_CONFIG_FLAG_OD_DYNAMIC
@@ -721,6 +733,12 @@ CO_ReturnError_t CO_RPDO_init(CO_RPDO_t *RPDO,
     if (odRet != ODR_OK) {
         if (errInfo != NULL) {
             *errInfo = (((uint32_t)OD_getIndex(OD_14xx_RPDOCommPar)) << 8) | 2;
+#if CO_INIT_DEBUG
+            CO_INIT_ERROR("RPDO CommPar subIdx 2 fail: entry=%p, index=0x%04X, odRet=%d\n",
+                          (void*)OD_14xx_RPDOCommPar,
+                          OD_14xx_RPDOCommPar ? OD_14xx_RPDOCommPar->index : 0xDEAD,
+                          odRet);
+#endif
         }
         return CO_ERROR_OD_PARAMETERS;
     }
@@ -1113,6 +1131,12 @@ CO_ReturnError_t CO_TPDO_init(CO_TPDO_t *TPDO,
     if (odRet != ODR_OK) {
         if (errInfo != NULL) {
             *errInfo = (((uint32_t)OD_getIndex(OD_18xx_TPDOCommPar)) << 8) | 2;
+#if CO_INIT_DEBUG
+            CO_INIT_ERROR("TPDO CommPar subIdx 2 fail: entry=%p, index=0x%04X, odRet=%d\n",
+                          (void*)OD_18xx_TPDOCommPar,
+                          OD_18xx_TPDOCommPar ? OD_18xx_TPDOCommPar->index : 0xDEAD,
+                          odRet);
+#endif
         }
         return CO_ERROR_OD_PARAMETERS;
     }
