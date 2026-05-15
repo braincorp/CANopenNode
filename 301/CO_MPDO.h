@@ -66,6 +66,16 @@ extern "C" {
 #define CO_CONFIG_MPDO_TX_COUNT 1
 #endif
 
+/** Maximum number of SAM dispatch entries (consumer side, 0x1FD0 equivalent). */
+#ifndef CO_CONFIG_MPDO_DISPATCH_COUNT
+#define CO_CONFIG_MPDO_DISPATCH_COUNT 8
+#endif
+
+/** Maximum number of SAM scan entries (producer side, 0x1FA0 equivalent). */
+#ifndef CO_CONFIG_MPDO_SCAN_COUNT
+#define CO_CONFIG_MPDO_SCAN_COUNT 8
+#endif
+
 /** MPDO frame addressing mode. */
 typedef enum {
     CO_MPDO_MODE_DAM = 0,
@@ -102,9 +112,45 @@ typedef struct {
     CO_CANtx_t *CANtxBuff;     /**< Tx buffer, returned by CO_CANtxBufferInit. */
     uint32_t inhibitTime_us;   /**< Inhibit interval. */
     uint32_t inhibitTimer;     /**< Counts down to 0 between sends. */
-    volatile bool_t sendRequest; /**< Caller scheduled a frame. */
+    volatile bool_t sendRequest; /**< Caller scheduled a frame (DAM). */
     uint8_t  pendingFrame[8];  /**< Built by CO_MPDO_send_DAM(). */
 } CO_MPDO_tx_t;
+#endif
+
+#if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_RX_SAM) || defined CO_DOXYGEN
+/**
+ * One row of the SAM dispatcher table. CiA 301 §7.2.5.3 OD 0x1FD0 equivalent.
+ * On receive of a SAM frame, the table is searched for a row whose
+ * (srcNodeId, srcIdx, srcSub) matches the frame, and the payload is then
+ * written to (dstIdx, dstSub) on this node's OD.
+ */
+typedef struct {
+    bool_t   valid;            /**< Slot is configured. */
+    uint8_t  srcNodeId;        /**< Producer node ID (1..127). */
+    uint16_t srcIdx;           /**< Producer-side OD index. */
+    uint8_t  srcSub;           /**< Producer-side OD sub-index. */
+    uint16_t dstIdx;           /**< Local OD index to write into. */
+    uint8_t  dstSub;           /**< Local OD sub-index to write into. */
+} CO_MPDO_dispatch_t;
+#endif
+
+#if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_TX_SAM) || defined CO_DOXYGEN
+/**
+ * One row of the SAM scanner table. CiA 301 §7.2.5.3 OD 0x1FA0 equivalent.
+ * Bound to a local OD entry via OD_extension_init(); writes to that entry
+ * raise the dirty flag, and CO_MPDO_processTX emits one SAM frame per dirty
+ * row on the carrier TX slot.
+ */
+typedef struct {
+    bool_t   valid;            /**< Slot is configured. */
+    uint16_t srcIdx;           /**< Local OD index being scanned. */
+    uint8_t  srcSub;           /**< Local OD sub-index being scanned. */
+    uint8_t  length;           /**< 1..4 bytes of payload to emit. */
+    uint8_t  txSlotIdx;        /**< Carrier TX slot in CO_MPDO_t::tx[]. */
+    OD_entry_t *entry;         /**< Cached OD_find() result, for read on emit. */
+    OD_extension_t scanExt;    /**< Installed on the scanned OD entry. */
+    volatile bool_t dirty;     /**< Set on local write, cleared on emit. */
+} CO_MPDO_scan_t;
 #endif
 
 /**
@@ -122,6 +168,12 @@ typedef struct {
 #if ((CO_CONFIG_MPDO) & (CO_CONFIG_MPDO_TX_DAM | CO_CONFIG_MPDO_TX_SAM)) || defined CO_DOXYGEN
     CO_MPDO_tx_t    tx[CO_CONFIG_MPDO_TX_COUNT];
     uint16_t        txIdxBase; /**< First txArray index owned by MPDO. */
+#endif
+#if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_RX_SAM) || defined CO_DOXYGEN
+    CO_MPDO_dispatch_t dispatch[CO_CONFIG_MPDO_DISPATCH_COUNT];
+#endif
+#if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_TX_SAM) || defined CO_DOXYGEN
+    CO_MPDO_scan_t  scan[CO_CONFIG_MPDO_SCAN_COUNT];
 #endif
 } CO_MPDO_t;
 
@@ -207,6 +259,106 @@ CO_ReturnError_t CO_MPDO_send_DAM(CO_MPDO_t *MPDO,
                                   uint8_t sub,
                                   const void *data,
                                   uint8_t len);
+#endif
+
+
+#if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_RX_SAM) || defined CO_DOXYGEN
+/**
+ * Configure one MPDO consumer slot for SAM reception. Behaves identically to
+ * CO_MPDO_configRX_DAM — same CAN-ID subscription — but is provided as a
+ * separate symbol so callers self-document the slot's intent. When both RX
+ * modes are compiled in, a single subscribed CAN-ID delivers DAM and SAM
+ * frames to the same slot; the mode is picked apart by byte 0 of the payload.
+ *
+ * @param MPDO Container.
+ * @param slotIdx 0..CO_CONFIG_MPDO_RX_COUNT-1.
+ * @param canId 11-bit COB-ID to subscribe to.
+ *
+ * @return CO_ERROR_NO on success.
+ */
+CO_ReturnError_t CO_MPDO_configRX_SAM(CO_MPDO_t *MPDO,
+                                      uint8_t slotIdx,
+                                      uint16_t canId);
+
+
+/**
+ * Append one entry to the SAM dispatcher table.
+ *
+ * On receipt of a SAM frame whose byte 0 names @p producerNodeId and whose
+ * (srcIdx, srcSub) match this row, the payload is written into this node's
+ * (dstIdx, dstSub). The local OD entry must have ODA_RPDO set and a length
+ * in 1..4; payload that does not match the destination length raises
+ * CO_EMC_DAM_MPDO. Frames with no matching row are silently dropped.
+ *
+ * First-match-wins on duplicates; rows are scanned in registration order.
+ *
+ * @param MPDO Container.
+ * @param producerNodeId 1..127 — producer node we accept frames from.
+ * @param srcIdx Producer OD index named in the SAM frame.
+ * @param srcSub Producer OD sub-index named in the SAM frame.
+ * @param dstIdx Local OD index to write into.
+ * @param dstSub Local OD sub-index to write into.
+ *
+ * @return CO_ERROR_NO on success,
+ *         CO_ERROR_OUT_OF_MEMORY if dispatch table is full,
+ *         CO_ERROR_ILLEGAL_ARGUMENT on bad args.
+ */
+CO_ReturnError_t CO_MPDO_dispatchAdd_SAM(CO_MPDO_t *MPDO,
+                                         uint8_t producerNodeId,
+                                         uint16_t srcIdx,
+                                         uint8_t srcSub,
+                                         uint16_t dstIdx,
+                                         uint8_t dstSub);
+#endif
+
+
+#if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_TX_SAM) || defined CO_DOXYGEN
+/**
+ * Configure one MPDO producer slot to carry SAM frames.
+ *
+ * @param MPDO Container.
+ * @param slotIdx 0..CO_CONFIG_MPDO_TX_COUNT-1.
+ * @param canId 11-bit COB-ID to publish on.
+ * @param inhibitTime_us Minimum spacing between sends on this slot.
+ *
+ * @return CO_ERROR_NO on success.
+ */
+CO_ReturnError_t CO_MPDO_configTX_SAM(CO_MPDO_t *MPDO,
+                                      uint8_t slotIdx,
+                                      uint16_t canId,
+                                      uint32_t inhibitTime_us);
+
+
+/**
+ * Register a local OD entry for SAM scanning.
+ *
+ * Installs an OD_extension_t on (srcIdx, srcSub) that flags the row dirty on
+ * write while preserving the original storage via OD_writeOriginal. The
+ * @ref CO_MPDO_processTX walker then emits one SAM frame per dirty row on
+ * the carrier @p txSlotIdx, subject to that slot's inhibit window.
+ *
+ * Warning: this overwrites any extension previously installed on the entry.
+ * Applications that need to coexist with custom OD extensions must wrap the
+ * scan plumbing manually for now.
+ *
+ * @param MPDO Container.
+ * @param txSlotIdx Carrier TX slot, must have been configured via
+ *                  CO_MPDO_configTX_SAM().
+ * @param srcIdx Local OD index to scan.
+ * @param srcSub Local OD sub-index to scan.
+ * @param length 1..4 — payload size to emit per frame; must match the OD
+ *               entry's storage length.
+ *
+ * @return CO_ERROR_NO on success,
+ *         CO_ERROR_OUT_OF_MEMORY if scan table is full,
+ *         CO_ERROR_OD_PARAMETERS if (srcIdx, srcSub) is not in the OD,
+ *         CO_ERROR_ILLEGAL_ARGUMENT on bad length / TX slot.
+ */
+CO_ReturnError_t CO_MPDO_scanAdd_SAM(CO_MPDO_t *MPDO,
+                                     uint8_t txSlotIdx,
+                                     uint16_t srcIdx,
+                                     uint8_t srcSub,
+                                     uint8_t length);
 #endif
 
 
