@@ -474,6 +474,32 @@ extern "C" {
 #define CO_CONFIG_TPDO_TIMERS_ENABLE 0x08
 #define CO_CONFIG_PDO_SYNC_ENABLE 0x10
 #define CO_CONFIG_PDO_OD_IO_ACCESS 0x20
+
+/**
+ * Configuration of @ref CO_MPDO (Multiplexed PDO, CiA 301 §7.2.5)
+ *
+ * MPDO provides one PDO COB-ID that carries (idx, sub, data[1..4]) tuples so
+ * the producer can write to many destination OD entries through a single
+ * mapping slot. There are two flavors: DAM (Destination Address Mode, target
+ * picked by the producer per-frame) and SAM (Source Address Mode, consumer
+ * looks up local destination via the OD 0x1FD0 dispatcher).
+ *
+ * Possible flags, can be ORed:
+ * - CO_CONFIG_MPDO_RX_DAM - Enable DAM consumer.
+ * - CO_CONFIG_MPDO_TX_DAM - Enable DAM producer.
+ * - CO_CONFIG_MPDO_RX_SAM - Enable SAM consumer (0x1FD0 dispatcher).
+ * - CO_CONFIG_MPDO_TX_SAM - Enable SAM producer (0x1FA0 scanner).
+ *
+ * When CO_CONFIG_MPDO == 0 every byte of CO_MPDO.c is compiled out and no
+ * fields are added to any struct.
+ */
+#ifdef CO_DOXYGEN
+#define CO_CONFIG_MPDO (0)
+#endif
+#define CO_CONFIG_MPDO_RX_DAM 0x01
+#define CO_CONFIG_MPDO_TX_DAM 0x02
+#define CO_CONFIG_MPDO_RX_SAM 0x04
+#define CO_CONFIG_MPDO_TX_SAM 0x08
 /** @} */ /* CO_STACK_CONFIG_SYNC_PDO */
 
 

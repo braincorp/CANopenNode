@@ -276,7 +276,8 @@
 #define CO_RX_IDX_GFC       (CO_RX_IDX_TIME     + CO_RX_CNT_TIME)
 #define CO_RX_IDX_SRDO      (CO_RX_IDX_GFC      + CO_RX_CNT_GFC)
 #define CO_RX_IDX_RPDO      (CO_RX_IDX_SRDO     + CO_RX_CNT_SRDO * 2)
-#define CO_RX_IDX_SDO_SRV   (CO_RX_IDX_RPDO     + CO_RX_CNT_RPDO)
+#define CO_RX_IDX_MPDO      (CO_RX_IDX_RPDO     + CO_RX_CNT_RPDO)
+#define CO_RX_IDX_SDO_SRV   (CO_RX_IDX_MPDO     + CO_RX_CNT_MPDO)
 #define CO_RX_IDX_SDO_CLI   (CO_RX_IDX_SDO_SRV  + CO_RX_CNT_SDO_SRV)
 #define CO_RX_IDX_HB_CONS   (CO_RX_IDX_SDO_CLI  + CO_RX_CNT_SDO_CLI)
 #define CO_RX_IDX_LSS_SLV   (CO_RX_IDX_HB_CONS  + CO_RX_CNT_HB_CONS)
@@ -290,13 +291,34 @@
 #define CO_TX_IDX_GFC       (CO_TX_IDX_TIME     + CO_TX_CNT_TIME)
 #define CO_TX_IDX_SRDO      (CO_TX_IDX_GFC      + CO_TX_CNT_GFC)
 #define CO_TX_IDX_TPDO      (CO_TX_IDX_SRDO     + CO_TX_CNT_SRDO * 2)
-#define CO_TX_IDX_SDO_SRV   (CO_TX_IDX_TPDO     + CO_TX_CNT_TPDO)
+#define CO_TX_IDX_MPDO      (CO_TX_IDX_TPDO     + CO_TX_CNT_TPDO)
+#define CO_TX_IDX_SDO_SRV   (CO_TX_IDX_MPDO     + CO_TX_CNT_MPDO)
 #define CO_TX_IDX_SDO_CLI   (CO_TX_IDX_SDO_SRV  + CO_TX_CNT_SDO_SRV)
 #define CO_TX_IDX_HB_PROD   (CO_TX_IDX_SDO_CLI  + CO_TX_CNT_SDO_CLI)
 #define CO_TX_IDX_LSS_SLV   (CO_TX_IDX_HB_PROD  + CO_TX_CNT_HB_PROD)
 #define CO_TX_IDX_LSS_MST   (CO_TX_IDX_LSS_SLV  + CO_TX_CNT_LSS_SLV)
 #define CO_CNT_ALL_TX_MSGS  (CO_TX_IDX_LSS_MST  + CO_TX_CNT_LSS_MST)
 #endif /* #ifdef #else CO_MULTIPLE_OD */
+
+
+/* MPDO buffer counts depend only on the compile-time CO_CONFIG_MPDO flags
+ * (there is no per-OD count source for them), so they live outside the
+ * single-OD vs CO_MULTIPLE_OD discriminator. */
+#if (CO_CONFIG_MPDO) != 0
+ #if (CO_CONFIG_MPDO) & (CO_CONFIG_MPDO_RX_DAM | CO_CONFIG_MPDO_RX_SAM)
+  #define CO_RX_CNT_MPDO CO_CONFIG_MPDO_RX_COUNT
+ #else
+  #define CO_RX_CNT_MPDO 0
+ #endif
+ #if (CO_CONFIG_MPDO) & (CO_CONFIG_MPDO_TX_DAM | CO_CONFIG_MPDO_TX_SAM)
+  #define CO_TX_CNT_MPDO CO_CONFIG_MPDO_TX_COUNT
+ #else
+  #define CO_TX_CNT_MPDO 0
+ #endif
+#else
+ #define CO_RX_CNT_MPDO 0
+ #define CO_TX_CNT_MPDO 0
+#endif
 
 
 /* Objects from heap **********************************************************/
@@ -473,6 +495,10 @@ CO_t *CO_new(CO_config_t *config, uint32_t *heapMemoryUsed) {
         }
 #endif
 
+#if (CO_CONFIG_MPDO) != 0
+        CO_alloc_break_on_fail(co->MPDO, 1, sizeof(*co->MPDO));
+#endif
+
 #if (CO_CONFIG_LEDS) & CO_CONFIG_LEDS_ENABLE
         if (CO_GET_CNT(LEDS) == 1) {
             CO_alloc_break_on_fail(co->LEDs, CO_GET_CNT(LEDS), sizeof(*co->LEDs));
@@ -554,6 +580,9 @@ CO_t *CO_new(CO_config_t *config, uint32_t *heapMemoryUsed) {
 #if (CO_CONFIG_PDO) & CO_CONFIG_RPDO_ENABLE
         co->RX_IDX_RPDO = idxRx; idxRx += RX_CNT_RPDO;
 #endif
+#if (CO_CONFIG_MPDO) != 0
+        co->RX_IDX_MPDO = idxRx; idxRx += CO_RX_CNT_MPDO;
+#endif
         co->RX_IDX_SDO_SRV = idxRx; idxRx += RX_CNT_SDO_SRV;
 #if (CO_CONFIG_SDO_CLI) & CO_CONFIG_SDO_CLI_ENABLE
         co->RX_IDX_SDO_CLI = idxRx; idxRx += RX_CNT_SDO_CLI;
@@ -586,6 +615,9 @@ CO_t *CO_new(CO_config_t *config, uint32_t *heapMemoryUsed) {
 #endif
 #if (CO_CONFIG_PDO) & CO_CONFIG_TPDO_ENABLE
         co->TX_IDX_TPDO = idxTx; idxTx += TX_CNT_TPDO;
+#endif
+#if (CO_CONFIG_MPDO) != 0
+        co->TX_IDX_MPDO = idxTx; idxTx += CO_TX_CNT_MPDO;
 #endif
         co->TX_IDX_SDO_SRV = idxTx; idxTx += TX_CNT_SDO_SRV;
 #if (CO_CONFIG_SDO_CLI) & CO_CONFIG_SDO_CLI_ENABLE
@@ -665,6 +697,10 @@ void CO_delete(CO_t *co) {
     CO_free(co->LEDs);
 #endif
 
+#if (CO_CONFIG_MPDO) != 0
+    CO_free(co->MPDO);
+#endif
+
 #if (CO_CONFIG_PDO) & CO_CONFIG_TPDO_ENABLE
     CO_free(co->TPDO);
 #endif
@@ -742,6 +778,9 @@ void CO_delete(CO_t *co) {
 #if (CO_CONFIG_PDO) & CO_CONFIG_TPDO_ENABLE
     static CO_TPDO_t COO_TPDO[OD_CNT_TPDO];
 #endif
+#if (CO_CONFIG_MPDO) != 0
+    static CO_MPDO_t COO_MPDO;
+#endif
 #if (CO_CONFIG_LEDS) & CO_CONFIG_LEDS_ENABLE
     static CO_LEDs_t COO_LEDs;
 #endif
@@ -803,6 +842,9 @@ CO_t *CO_new(CO_config_t *config, uint32_t *heapMemoryUsed) {
 #endif
 #if (CO_CONFIG_PDO) & CO_CONFIG_TPDO_ENABLE
     co->TPDO = &COO_TPDO[0];
+#endif
+#if (CO_CONFIG_MPDO) != 0
+    co->MPDO = &COO_MPDO;
 #endif
 #if (CO_CONFIG_LEDS) & CO_CONFIG_LEDS_ENABLE
     co->LEDs = &COO_LEDs;
@@ -1340,6 +1382,57 @@ CO_ReturnError_t CO_CANopenInitPDO(CO_t *co,
 
     return CO_ERROR_NO;
 }
+
+
+/******************************************************************************/
+#if (CO_CONFIG_MPDO) != 0
+CO_ReturnError_t CO_CANopenInitMPDO(CO_t *co,
+                                    CO_EM_t *em,
+                                    OD_t *od,
+                                    uint8_t nodeId)
+{
+    if (co == NULL || od == NULL) {
+        return CO_ERROR_ILLEGAL_ARGUMENT;
+    }
+    if (nodeId < 1 || nodeId > 127 || co->nodeIdUnconfigured) {
+        return co->nodeIdUnconfigured
+               ? CO_ERROR_NODE_ID_UNCONFIGURED_LSS : CO_ERROR_ILLEGAL_ARGUMENT;
+    }
+    if (em == NULL) {
+        em = co->em;
+    }
+    return CO_MPDO_init(co->MPDO,
+                        od,
+                        em,
+                        co->CANmodule,
+                        nodeId,
+                        CO_GET_CO(RX_IDX_MPDO),
+                        CO_GET_CO(TX_IDX_MPDO));
+}
+
+
+#if (CO_CONFIG_MPDO) & (CO_CONFIG_MPDO_RX_DAM | CO_CONFIG_MPDO_RX_SAM)
+void CO_process_MPDO_RX(CO_t *co) {
+    if (co == NULL || co->nodeIdUnconfigured) {
+        return;
+    }
+    CO_MPDO_processRX(co->MPDO);
+}
+#endif
+
+
+#if (CO_CONFIG_MPDO) & (CO_CONFIG_MPDO_TX_DAM | CO_CONFIG_MPDO_TX_SAM)
+void CO_process_MPDO_TX(CO_t *co,
+                        uint32_t timeDifference_us,
+                        uint32_t *timerNext_us)
+{
+    if (co == NULL || co->nodeIdUnconfigured) {
+        return;
+    }
+    CO_MPDO_processTX(co->MPDO, timeDifference_us, timerNext_us);
+}
+#endif
+#endif /* (CO_CONFIG_MPDO) != 0 */
 
 
 /******************************************************************************/
