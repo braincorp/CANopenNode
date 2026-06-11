@@ -33,8 +33,13 @@ static void CO_MPDO_receive(void *object, void *msg) {
     uint8_t DLC = CO_CANrxMsg_readDLC(msg);
     uint8_t *data = CO_CANrxMsg_readData(msg);
 
-    /* MPDO frames are always 8 bytes (CiA 301 §7.2.5). Drop runts. */
-    if (!rx->valid || DLC != 8U) {
+    if (!rx->valid) {
+        return;
+    }
+
+    /* MPDO frames are always 8 bytes (CiA 301 §7.2.5). Count and drop runts. */
+    if (DLC != 8U) {
+        rx->badDlcCnt++;
         return;
     }
 
@@ -160,9 +165,11 @@ static bool_t CO_MPDO_applySAM(CO_MPDO_t *MPDO, const uint8_t *frame) {
         }
     }
 
-    /* Dispatcher miss: drop silently. The producer is broadcasting whatever
-     * it scans; only rows we have explicitly subscribed to are routed. */
+    /* Dispatcher miss: drop per spec, but count it — an uncounted miss is an
+     * undebuggable mis-provisioning in the field. The producer broadcasts
+     * whatever it scans; only rows we explicitly subscribed to are routed. */
     if (match == NULL) {
+        MPDO->rxDispatchMissCnt++;
         return true;
     }
 

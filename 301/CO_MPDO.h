@@ -100,6 +100,7 @@ typedef struct {
     uint16_t canId;            /**< 11-bit COB-ID, 0 ⇒ slot disabled. */
     volatile void *CANrxNew;   /**< Same flag-style as CO_RPDO_t. */
     uint8_t  CANrxData[8];     /**< Buffered payload. */
+    volatile uint32_t badDlcCnt; /**< Frames dropped on this slot for DLC != 8. */
 } CO_MPDO_rx_t;
 #endif
 
@@ -172,6 +173,7 @@ typedef struct {
 #endif
 #if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_RX_SAM) || defined CO_DOXYGEN
     CO_MPDO_dispatch_t dispatch[CO_CONFIG_MPDO_DISPATCH_COUNT];
+    volatile uint32_t rxDispatchMissCnt; /**< SAM frames dropped with no matching dispatch row. */
 #endif
 #if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_TX_SAM) || defined CO_DOXYGEN
     CO_MPDO_scan_t  scan[CO_CONFIG_MPDO_SCAN_COUNT];
