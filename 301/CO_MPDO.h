@@ -131,6 +131,7 @@ typedef struct {
     uint8_t  srcSub;           /**< Producer-side OD sub-index. */
     uint16_t dstIdx;           /**< Local OD index to write into. */
     uint8_t  dstSub;           /**< Local OD sub-index to write into. */
+    uint8_t  dstLength;        /**< Target storage length captured at registration (1..4). */
 } CO_MPDO_dispatch_t;
 #endif
 
@@ -286,11 +287,11 @@ CO_ReturnError_t CO_MPDO_configRX_SAM(CO_MPDO_t *MPDO,
  *
  * On receipt of a SAM frame whose byte 0 names @p producerNodeId and whose
  * (srcIdx, srcSub) match this row, the payload is written into this node's
- * (dstIdx, dstSub). The local OD entry must have ODA_RPDO set and a length
- * in 1..4; payload that does not match the destination length raises
- * CO_EMC_DAM_MPDO. Frames with no matching row are silently dropped.
- *
- * First-match-wins on duplicates; rows are scanned in registration order.
+ * (dstIdx, dstSub). The destination is validated here at registration: it
+ * must exist in the OD, have ODA_RPDO set, and have a storage length in 1..4.
+ * That length is captured and re-checked on every apply. Duplicate
+ * (producerNodeId, srcIdx, srcSub) keys are rejected so dispatch is
+ * unambiguous.
  *
  * @param MPDO Container.
  * @param producerNodeId 1..127 — producer node we accept frames from.
@@ -301,7 +302,9 @@ CO_ReturnError_t CO_MPDO_configRX_SAM(CO_MPDO_t *MPDO,
  *
  * @return CO_ERROR_NO on success,
  *         CO_ERROR_OUT_OF_MEMORY if dispatch table is full,
- *         CO_ERROR_ILLEGAL_ARGUMENT on bad args.
+ *         CO_ERROR_OD_PARAMETERS if the destination is missing, not
+ *         PDO-writable, or not 1..4 bytes,
+ *         CO_ERROR_ILLEGAL_ARGUMENT on bad args or a duplicate key.
  */
 CO_ReturnError_t CO_MPDO_dispatchAdd_SAM(CO_MPDO_t *MPDO,
                                          uint8_t producerNodeId,

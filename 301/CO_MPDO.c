@@ -340,6 +340,34 @@ CO_ReturnError_t CO_MPDO_dispatchAdd_SAM(CO_MPDO_t *MPDO,
         return CO_ERROR_ILLEGAL_ARGUMENT;
     }
 
+    /* Validate the local destination up front so a mis-provisioned row fails
+     * loudly at registration instead of silently dropping frames at runtime.
+     * Resolve with odOrig=false to match the view CO_MPDO_applySAM writes
+     * through. */
+    OD_entry_t *entry = OD_find(MPDO->OD, dstIdx);
+    if (entry == NULL) {
+        return CO_ERROR_OD_PARAMETERS;
+    }
+    OD_IO_t io;
+    if (OD_getSub(entry, dstSub, &io, false) != ODR_OK) {
+        return CO_ERROR_OD_PARAMETERS;
+    }
+    if ((io.stream.attribute & ODA_RPDO) == 0U
+        || io.stream.dataLength == 0U || io.stream.dataLength > 4U
+    ) {
+        return CO_ERROR_OD_PARAMETERS;
+    }
+
+    /* Reject duplicate keys — dispatch must resolve to exactly one row. */
+    for (uint16_t i = 0; i < CO_CONFIG_MPDO_DISPATCH_COUNT; i++) {
+        CO_MPDO_dispatch_t *d = &MPDO->dispatch[i];
+        if (d->valid && d->srcNodeId == producerNodeId
+            && d->srcIdx == srcIdx && d->srcSub == srcSub
+        ) {
+            return CO_ERROR_ILLEGAL_ARGUMENT;
+        }
+    }
+
     for (uint16_t i = 0; i < CO_CONFIG_MPDO_DISPATCH_COUNT; i++) {
         CO_MPDO_dispatch_t *d = &MPDO->dispatch[i];
         if (d->valid) {
@@ -350,6 +378,7 @@ CO_ReturnError_t CO_MPDO_dispatchAdd_SAM(CO_MPDO_t *MPDO,
         d->srcSub = srcSub;
         d->dstIdx = dstIdx;
         d->dstSub = dstSub;
+        d->dstLength = (uint8_t)io.stream.dataLength;
         d->valid = true;
         return CO_ERROR_NO;
     }
