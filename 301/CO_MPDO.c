@@ -495,7 +495,8 @@ CO_ReturnError_t CO_MPDO_scanAdd_SAM(CO_MPDO_t *MPDO,
                                      uint8_t txSlotIdx,
                                      uint16_t srcIdx,
                                      uint8_t srcSub,
-                                     uint8_t length)
+                                     uint8_t length,
+                                     uint32_t eventTime_us)
 {
     if (MPDO == NULL || txSlotIdx >= CO_CONFIG_MPDO_TX_COUNT
         || length == 0U || length > 4U
@@ -538,6 +539,8 @@ CO_ReturnError_t CO_MPDO_scanAdd_SAM(CO_MPDO_t *MPDO,
     scan->txSlotIdx = txSlotIdx;
     scan->entry = entry;
     scan->dirty = false;
+    scan->eventTime_us = eventTime_us;
+    scan->eventTimer = eventTime_us;
     scan->scanExt.object = scan;
     scan->scanExt.read = OD_readOriginal;
     scan->scanExt.write = CO_MPDO_scanWrite;
@@ -631,7 +634,25 @@ void CO_MPDO_processTX(CO_MPDO_t *MPDO,
 #if ((CO_CONFIG_MPDO) & CO_CONFIG_MPDO_TX_SAM)
     for (uint16_t i = 0; i < CO_CONFIG_MPDO_SCAN_COUNT; i++) {
         CO_MPDO_scan_t *scan = &MPDO->scan[i];
-        if (!scan->valid || !scan->dirty) {
+        if (!scan->valid) {
+            continue;
+        }
+
+        /* Event timer: mark the row dirty every eventTime_us for cyclic
+         * emission, modeled on the TPDO event timer. eventTime_us == 0 keeps
+         * the row purely event-driven. */
+        if (scan->eventTime_us != 0U) {
+            scan->eventTimer = (scan->eventTimer > timeDifference_us)
+                             ? (scan->eventTimer - timeDifference_us) : 0U;
+            if (scan->eventTimer == 0U) {
+                scan->dirty = true;
+            }
+            if (timerNext_us != NULL && *timerNext_us > scan->eventTimer) {
+                *timerNext_us = scan->eventTimer;
+            }
+        }
+
+        if (!scan->dirty) {
             continue;
         }
         CO_MPDO_tx_t *tx = &MPDO->tx[scan->txSlotIdx];
@@ -680,6 +701,7 @@ void CO_MPDO_processTX(CO_MPDO_t *MPDO,
 
         if (CO_CANsend(MPDO->CANdev, tx->CANtxBuff) == CO_ERROR_NO) {
             tx->inhibitTimer = tx->inhibitTime_us;
+            scan->eventTimer = scan->eventTime_us;
         } else {
             /* TX queue full — re-arm for retry next tick. */
             scan->dirty = true;

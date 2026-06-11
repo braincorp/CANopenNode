@@ -152,6 +152,8 @@ typedef struct {
     OD_entry_t *entry;         /**< Cached OD_find() result, for read on emit. */
     OD_extension_t scanExt;    /**< Installed on the scanned OD entry. */
     volatile bool_t dirty;     /**< Set on local write, cleared on emit. */
+    uint32_t eventTime_us;     /**< Cyclic emit period; 0 ⇒ event-driven only. */
+    uint32_t eventTimer;       /**< Counts down to 0, then marks the row dirty. */
 } CO_MPDO_scan_t;
 #endif
 
@@ -342,6 +344,11 @@ CO_ReturnError_t CO_MPDO_configTX_SAM(CO_MPDO_t *MPDO,
  * @ref CO_MPDO_processTX walker then emits one SAM frame per dirty row on
  * the carrier @p txSlotIdx, subject to that slot's inhibit window.
  *
+ * With @p eventTime_us == 0 the row is purely event-driven (emit on local
+ * write). With @p eventTime_us > 0 the walker also marks the row dirty every
+ * @p eventTime_us, giving cyclic telemetry; the inhibit window still bounds
+ * the actual send rate. This mirrors the TPDO event-timer model.
+ *
  * Warning: this overwrites any extension previously installed on the entry.
  * Applications that need to coexist with custom OD extensions must wrap the
  * scan plumbing manually for now.
@@ -353,6 +360,8 @@ CO_ReturnError_t CO_MPDO_configTX_SAM(CO_MPDO_t *MPDO,
  * @param srcSub Local OD sub-index to scan.
  * @param length 1..4 — payload size to emit per frame; must match the OD
  *               entry's storage length.
+ * @param eventTime_us Cyclic emit period in microseconds; 0 ⇒ event-driven
+ *               only.
  *
  * @return CO_ERROR_NO on success,
  *         CO_ERROR_OUT_OF_MEMORY if scan table is full,
@@ -363,7 +372,8 @@ CO_ReturnError_t CO_MPDO_scanAdd_SAM(CO_MPDO_t *MPDO,
                                      uint8_t txSlotIdx,
                                      uint16_t srcIdx,
                                      uint8_t srcSub,
-                                     uint8_t length);
+                                     uint8_t length,
+                                     uint32_t eventTime_us);
 #endif
 
 
