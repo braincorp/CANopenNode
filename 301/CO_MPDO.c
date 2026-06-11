@@ -190,8 +190,11 @@ static bool_t CO_MPDO_applySAM(CO_MPDO_t *MPDO, const uint8_t *frame) {
         return false;
     }
 
+    /* The destination length was validated and captured at registration;
+     * reject if the live OD entry no longer agrees rather than absorbing a
+     * mismatched byte count. */
     OD_size_t writeLen = io.stream.dataLength;
-    if (writeLen == 0U || writeLen > 4U) {
+    if (writeLen != match->dstLength) {
         CO_errorReport(MPDO->em, CO_EM_RPDO_WRONG_LENGTH,
                        CO_EMC_DAM_MPDO,
                        ((uint32_t)match->dstIdx << 16) | ((uint32_t)match->dstSub << 8));
