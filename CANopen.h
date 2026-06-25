@@ -37,6 +37,7 @@
 #include "301/CO_SDOclient.h"
 #include "301/CO_SYNC.h"
 #include "301/CO_PDO.h"
+#include "301/CO_MPDO.h"
 #include "301/CO_TIME.h"
 #include "303/CO_LEDs.h"
 #include "304/CO_GFC.h"
@@ -359,6 +360,14 @@ typedef struct {
     uint16_t TX_IDX_TPDO; /**< Start index in CANtx. */
  #endif
 #endif
+#if (CO_CONFIG_MPDO) != 0 || defined CO_DOXYGEN
+    /** MPDO container, initialised by @ref CO_CANopenInitMPDO() */
+    CO_MPDO_t *MPDO;
+ #if defined CO_MULTIPLE_OD || defined CO_DOXYGEN
+    uint16_t RX_IDX_MPDO; /**< Start index in CANrx. */
+    uint16_t TX_IDX_MPDO; /**< Start index in CANtx. */
+ #endif
+#endif
 #if ((CO_CONFIG_LEDS) & CO_CONFIG_LEDS_ENABLE) || defined CO_DOXYGEN
     /** LEDs object, initialised by @ref CO_LEDs_init() */
     CO_LEDs_t *LEDs;
@@ -647,6 +656,50 @@ void CO_process_TPDO(CO_t *co,
                      uint32_t timeDifference_us,
                      uint32_t *timerNext_us);
 #endif
+
+
+#if (CO_CONFIG_MPDO) != 0 || defined CO_DOXYGEN
+/**
+ * Initialize CANopenNode MPDO container.
+ *
+ * Call after @ref CO_CANopenInitPDO(). The container is created empty;
+ * application configures per-slot RX/TX via @ref CO_MPDO_configRX_DAM /
+ * @ref CO_MPDO_configTX_DAM after this returns.
+ *
+ * @param co CANopen object.
+ * @param em Emergency object (or NULL to use co->em).
+ * @param od Object Dictionary.
+ * @param nodeId 1..127.
+ *
+ * @return CO_ERROR_NO in case of success.
+ */
+CO_ReturnError_t CO_CANopenInitMPDO(CO_t *co,
+                                    CO_EM_t *em,
+                                    OD_t *od,
+                                    uint8_t nodeId);
+
+#if ((CO_CONFIG_MPDO) & (CO_CONFIG_MPDO_RX_DAM | CO_CONFIG_MPDO_RX_SAM)) || defined CO_DOXYGEN
+/**
+ * Process MPDO consumer side. Call cyclically from the RT thread after
+ * @ref CO_process_RPDO().
+ */
+void CO_process_MPDO_RX(CO_t *co);
+#endif
+
+#if ((CO_CONFIG_MPDO) & (CO_CONFIG_MPDO_TX_DAM | CO_CONFIG_MPDO_TX_SAM)) || defined CO_DOXYGEN
+/**
+ * Process MPDO producer side. Call cyclically from the RT thread after
+ * @ref CO_process_TPDO().
+ *
+ * @param co CANopen object.
+ * @param timeDifference_us Time since last call.
+ * @param [out] timerNext_us info to OS — see CO_process(); may be NULL.
+ */
+void CO_process_MPDO_TX(CO_t *co,
+                        uint32_t timeDifference_us,
+                        uint32_t *timerNext_us);
+#endif
+#endif /* (CO_CONFIG_MPDO) != 0 */
 
 
 #if ((CO_CONFIG_SRDO) & CO_CONFIG_SRDO_ENABLE) || defined CO_DOXYGEN
